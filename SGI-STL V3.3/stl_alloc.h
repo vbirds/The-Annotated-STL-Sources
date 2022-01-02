@@ -296,6 +296,7 @@ private:
     enum {_MAX_BYTES = 128};
     enum {_NFREELISTS = 16}; // _MAX_BYTES/_ALIGN
 # endif
+  // 将bytes上调至8的倍数
   static size_t
   _S_round_up(size_t __bytes) 
     { return (((__bytes) + (size_t) _ALIGN-1) & ~((size_t) _ALIGN - 1)); }
@@ -310,8 +311,10 @@ private:
     static _Obj* __STL_VOLATILE _S_free_list[]; 
         // Specifying a size results in duplicate def for 4.1
 # else
+    // 16 个自由链表
     static _Obj* __STL_VOLATILE _S_free_list[_NFREELISTS]; 
 # endif
+    // 根据字节获取所在自由链表的数组下标
   static  size_t _S_freelist_index(size_t __bytes) {
         return (((__bytes) + (size_t)_ALIGN-1)/(size_t)_ALIGN - 1);
   }
@@ -320,11 +323,13 @@ private:
   static void* _S_refill(size_t __n);
   // Allocates a chunk for nobjs of size size.  nobjs may be reduced
   // if it is inconvenient to allocate the requested number.
+  // 配置一大块空间，可容纳nobjs个大小为size的区块
+  // 如果配置的nobjs个区块有所不便，nobjs可能会降低
   static char* _S_chunk_alloc(size_t __size, int& __nobjs);
 
   // Chunk allocation state.
-  static char* _S_start_free;
-  static char* _S_end_free;
+  static char* _S_start_free; // 内存池起始位置，只在chunk_alloc()中变化
+  static char* _S_end_free;   // 内存池结束位置，只在chunk_alloc()中变化
   static size_t _S_heap_size;
 
 # ifdef __STL_THREADS
@@ -349,10 +354,12 @@ public:
   {
     void* __ret = 0;
 
+    // 大于128字节 走一级配置器
     if (__n > (size_t) _MAX_BYTES) {
       __ret = malloc_alloc::allocate(__n);
     }
     else {
+      // 找到对应16个链表位置
       _Obj* __STL_VOLATILE* __my_free_list
           = _S_free_list + _S_freelist_index(__n);
       // Acquire the lock here with a constructor call.
@@ -364,6 +371,7 @@ public:
 #     endif
       _Obj* __RESTRICT __result = *__my_free_list;
       if (__result == 0)
+          // 没有找到可用的free list 准备重新填充free list
         __ret = _S_refill(_S_round_up(__n));
       else {
         *__my_free_list = __result -> _M_free_list_link;
@@ -377,6 +385,7 @@ public:
   /* __p may not be 0 */
   static void deallocate(void* __p, size_t __n)
   {
+      // 大于128调用第一级配置器
     if (__n > (size_t) _MAX_BYTES)
       malloc_alloc::deallocate(__p, __n);
     else {
@@ -389,6 +398,7 @@ public:
       /*REFERENCED*/
       _Lock __lock_instance;
 #       endif /* _NOTHREADS */
+      // 调整free list 回收区块
       __q -> _M_free_list_link = *__my_free_list;
       *__my_free_list = __q;
       // lock is released here
@@ -507,9 +517,12 @@ __default_alloc_template<__threads, __inst>::_S_refill(size_t __n)
     if (1 == __nobjs) return(__chunk);
     __my_free_list = _S_free_list + _S_freelist_index(__n);
 
+    // 调整free list 纳入新节点
     /* Build free list in chunk */
+    // 返回客户端的节点
       __result = (_Obj*)__chunk;
       *__my_free_list = __next_obj = (_Obj*)(__chunk + __n);
+      // 将free list 的各个节点串接起来
       for (__i = 1; ; __i++) {
         __current_obj = __next_obj;
         __next_obj = (_Obj*)((char*)__next_obj + __n);
@@ -550,7 +563,7 @@ __default_alloc_template<threads, inst>::reallocate(void* __p,
         __STL_MUTEX_INITIALIZER;
 #endif
 
-
+// static data member 的定义与初始值
 template <bool __threads, int __inst>
 char* __default_alloc_template<__threads, __inst>::_S_start_free = 0;
 
